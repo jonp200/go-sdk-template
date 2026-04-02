@@ -8,57 +8,45 @@ on:
 
 jobs:
   bootstrap:
+    if: github.repository != 'jonp200/go-sdk-template' && github.actor != 'github-actions[bot]' && !contains(github.event.head_commit.message, '[bootstrap]')
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 2
 
-      - name: Skip if last commit was made by the bootstrap workflow
-        id: check
-        run: |
-          AUTHOR=$(git log -1 --format='%an')
-          MSG=$(git log -1 --format='%s')
-          if [[ "$AUTHOR" == "github-actions"* ]] || echo "$MSG" | grep -qF '[bootstrap]'; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Install latest stable Go
-        if: steps.check.outputs.skip != 'true'
-        uses: actions/setup-go@v5
+      - uses: actions/setup-go@v5
         with:
           go-version: stable
 
-      - name: Update go.mod Go directive and tidy
-        if: steps.check.outputs.skip != 'true'
+      - name: Update go.mod Go directive
+        shell: bash
         run: |
           GO_VERSION=$(go env GOVERSION | sed 's/^go//')
           go mod edit -go "$GO_VERSION"
-          go mod tidy
 
-      - name: Fetch latest canonical Go .gitignore
-        if: steps.check.outputs.skip != 'true'
+      - name: Fetch canonical Go .gitignore
+        shell: bash
         run: |
           curl -fsSL \
             https://raw.githubusercontent.com/github/gitignore/main/Go.gitignore \
             -o .gitignore
 
-      - name: Commit and push changes if any
-        if: steps.check.outputs.skip != 'true'
+      - name: Remove placeholder files
+        shell: bash
+        run: |
+          rm -f doc.go
+          rm -f .github/workflows/bootstrap.yml
+
+      - name: Commit changes if needed
+        shell: bash
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          # Add files only if they exist
-          for f in go.mod go.sum .gitignore; do
-            if [ -f "$f" ]; then
-              git add "$f"
-            fi
-          done
+          git add go.mod .gitignore
+          git add -u doc.go
+          git add -u .github/workflows/bootstrap.yml
           if ! git diff --cached --quiet; then
-            git commit -m "chore: update Go version and .gitignore [bootstrap]"
+            git commit -m "chore: sync template defaults [bootstrap]"
             git push
           fi
