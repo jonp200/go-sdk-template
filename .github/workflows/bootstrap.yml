@@ -1,0 +1,59 @@
+name: Bootstrap
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Skip if last commit was made by the bootstrap workflow
+        id: check
+        run: |
+          AUTHOR=$(git log -1 --format='%an')
+          MSG=$(git log -1 --format='%s')
+          if [[ "$AUTHOR" == "github-actions"* ]] || echo "$MSG" | grep -qF '[bootstrap]'; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install latest stable Go
+        if: steps.check.outputs.skip != 'true'
+        uses: actions/setup-go@v5
+        with:
+          go-version: stable
+
+      - name: Update go.mod Go directive and tidy
+        if: steps.check.outputs.skip != 'true'
+        run: |
+          GO_VERSION=$(go env GOVERSION | sed 's/^go//')
+          go mod edit -go "$GO_VERSION"
+          go mod tidy
+
+      - name: Fetch latest canonical Go .gitignore
+        if: steps.check.outputs.skip != 'true'
+        run: |
+          curl -fsSL \
+            https://raw.githubusercontent.com/github/gitignore/main/Go.gitignore \
+            -o .gitignore
+
+      - name: Commit and push changes if any
+        if: steps.check.outputs.skip != 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add go.mod go.sum .gitignore
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: update Go version and .gitignore [bootstrap]"
+            git push
+          fi
